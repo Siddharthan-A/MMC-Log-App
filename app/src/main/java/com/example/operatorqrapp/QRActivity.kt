@@ -15,6 +15,8 @@ import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import com.android.volley.DefaultRetryPolicy
+
 
 class QRActivity : AppCompatActivity() {
 
@@ -28,9 +30,14 @@ class QRActivity : AppCompatActivity() {
     private val barcodeLauncher =
         registerForActivityResult(ScanContract()) { result ->
 
-            if (result.contents == null || isProcessing) return@registerForActivityResult
+            val qr = result.contents ?: return@registerForActivityResult
 
+            // 🚫 Block only while processing
+            if (isProcessing) return@registerForActivityResult
+
+            // 🔒 Lock immediately
             isProcessing = true
+            scanBtn.isEnabled = false
             showProcessing()
             Toast.makeText(this, "Processing...", Toast.LENGTH_SHORT).show()
 
@@ -102,6 +109,7 @@ class QRActivity : AppCompatActivity() {
     }
 
     private fun startScan() {
+        if (isProcessing) return
         val options = ScanOptions()
         options.setPrompt("Scan Machine QR")
         options.setBeepEnabled(true)
@@ -137,22 +145,32 @@ class QRActivity : AppCompatActivity() {
             {
                 showSuccess()
                 Toast.makeText(this, "Sheet Updated!", Toast.LENGTH_SHORT).show()
-                isProcessing = false
 
                 Handler(Looper.getMainLooper()).postDelayed({
+                    isProcessing = false
+                    scanBtn.isEnabled = true
                     showIdle()
                 }, 2000)
+
             },
             {
                 Toast.makeText(this, "Upload Failed!", Toast.LENGTH_LONG).show()
                 isProcessing = false
+                scanBtn.isEnabled = true
                 showIdle()
+
             }
         ) {
             override fun getBody() = body.toByteArray(Charsets.UTF_8)
             override fun getBodyContentType() =
                 "application/json; charset=utf-8"
         }
+        request.retryPolicy = DefaultRetryPolicy(
+            0,
+            0,
+            1f
+        )
+
 
         Volley.newRequestQueue(this).add(request)
     }
