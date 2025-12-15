@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MMC Log</string>
+    <string name="title_activity_success">SuccessActivity</string>
 </resources>
