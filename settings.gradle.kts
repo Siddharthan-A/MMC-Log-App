@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OperatorQRApp"
+rootProject.name = "OperatorQRApp_V2"
 include(":app")

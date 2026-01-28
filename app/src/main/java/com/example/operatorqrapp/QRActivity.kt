@@ -16,9 +16,35 @@ import com.android.volley.toolbox.Volley
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.android.volley.DefaultRetryPolicy
+import android.graphics.Bitmap
+import android.provider.MediaStore
+import android.util.Base64
+import java.io.ByteArrayOutputStream
+import androidx.activity.result.contract.ActivityResultContracts
+import java.util.concurrent.atomic.AtomicBoolean
 
 
-class QRActivity : AppCompatActivity() {
+
+
+
+
+class QRActivity : AppCompatActivity()
+{
+   // private val imageCallbackLock = AtomicBoolean(false)
+
+    private val cameraLaunchLock = AtomicBoolean(false)
+    private var uploadInProgress = false
+    //private var imageConsumed = false
+
+    //private var isImageUploading = false
+    //private var isImageUploading = false
+
+    //private var isImageUploading = false
+
+    private var lastScannedQR = ""
+
+    //   private val CAMERA_REQUEST = 200
+    //private var lastScannedQr: String? = null
 
     private lateinit var scanBtn: Button
     private lateinit var progressBar: ProgressBar
@@ -31,6 +57,7 @@ class QRActivity : AppCompatActivity() {
         registerForActivityResult(ScanContract()) { result ->
 
             val qr = result.contents ?: return@registerForActivityResult
+            lastScannedQR = qr
 
             // 🚫 Block only while processing
             if (isProcessing) return@registerForActivityResult
@@ -43,6 +70,30 @@ class QRActivity : AppCompatActivity() {
 
             sendToGoogleSheet(result.contents)
         }
+
+
+    private val cameraLauncher =
+            registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap: Bitmap? ->
+
+                // 🔒 HARD BLOCK: callback fires only once
+                if (!cameraLaunchLock.compareAndSet(true, false)) {
+                    return@registerForActivityResult
+                }
+
+                if (bitmap == null) {
+                    resetUI()
+                    return@registerForActivityResult
+                }
+
+                showProcessing()
+                statusText.text = "Uploading Image..."
+
+                uploadImageToDrive(bitmap)
+            }
+
+
+
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +110,9 @@ class QRActivity : AppCompatActivity() {
             checkCameraPermissionAndScan()
         }
     }
+
+
+
 
     private fun showIdle() {
         scanBtn.visibility = View.VISIBLE
@@ -129,7 +183,7 @@ class QRActivity : AppCompatActivity() {
             java.util.Locale.getDefault()
         ).format(java.util.Date())
 
-        val url = "https://script.google.com/macros/s/AKfycbwlabz_OmHiPHZjwsH7lzx7SJ6AY0zAe_W9bGUp2yRCTwKUPvW4QS4_E7wI7K8GWIPV/exec"
+        val url = "https://script.google.com/macros/s/AKfycbzZ2Xyf2dK3-sB29L5iNuzHHCJbWIbebkndfzMqb-3avQs96qjS-4LfQwj0YTjzsBS4/exec"
 
         val body = """
         {
@@ -145,12 +199,17 @@ class QRActivity : AppCompatActivity() {
             {
                 showSuccess()
                 Toast.makeText(this, "Sheet Updated!", Toast.LENGTH_SHORT).show()
-
+                //cameraLauncher.launch(null)
+              //  Handler(Looper.getMainLooper()).postDelayed({
+                //    openCamera()
+           //     }, 1000)
+               // imageConsumed = false
                 Handler(Looper.getMainLooper()).postDelayed({
-                    isProcessing = false
-                    scanBtn.isEnabled = true
-                    showIdle()
-                }, 2000)
+                    if (cameraLaunchLock.compareAndSet(false, true)) {
+                        cameraLauncher.launch(null)
+                    }
+                }, 1000)
+
 
             },
             {
@@ -174,4 +233,106 @@ class QRActivity : AppCompatActivity() {
 
         Volley.newRequestQueue(this).add(request)
     }
+   // private fun openCamera() {
+    //    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+      //  startActivityForResult(intent, CAMERA_REQUEST)
+    //}
+ /*  private fun openCamera() {
+       cameraLauncher.launch(null)
+   }*/
+
+
+    // override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+     //   super.onActivityResult(requestCode, resultCode, data)
+
+       // if (requestCode == CAMERA_REQUEST && resultCode == RESULT_OK) {
+         //   val bitmap = data?.extras?.get("data") as Bitmap
+           // uploadImageToDrive(bitmap)
+        //}
+
+
+    private fun uploadImageToDrive(bitmap: Bitmap) {
+        if (uploadInProgress) {
+            //Log.d("UPLOAD", "Duplicate upload blocked")
+            return
+        }
+
+        uploadInProgress = true
+
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+        val imageBytes = stream.toByteArray()
+        val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+
+        val fileName = "Sheet_${System.currentTimeMillis()}.jpg"
+
+        val body = """
+    {
+      "machine":"$lastScannedQR",
+      "filename":"$fileName",
+      "image":"$base64Image"
+    }
+    """.trimIndent()
+
+        val request = object : StringRequest(
+            Request.Method.POST,
+            DRIVE_SCRIPT_URL,
+            {
+                //isImageUploading = false
+                //imageConsumed = false
+               // imageCallbackLock.set(false)
+                cameraLaunchLock.set(false)
+                uploadInProgress = false
+                showImageSuccess()
+
+            },
+            {
+                //isImageUploading = false
+                //imageConsumed = false
+               // imageCallbackLock.set(false)
+                cameraLaunchLock.set(false)
+                uploadInProgress = false
+                Toast.makeText(this, "Image upload failed", Toast.LENGTH_LONG).show()
+                resetUI()
+            }
+        ) {
+            override fun getBody() = body.toByteArray(Charsets.UTF_8)
+            override fun getBodyContentType() =
+                "application/json; charset=utf-8"
+        }
+
+        Volley.newRequestQueue(this).add(request)
+    }
+
+
+
+
+
+    private fun resetUI() {
+        isProcessing = false
+        scanBtn.isEnabled = true
+        showIdle()
+    }
+
+
+
+    private companion object {
+        const val DRIVE_SCRIPT_URL =
+            "https://script.google.com/macros/s/AKfycbxZCXBvGDrQNecMjofI08uFtLtArjhXYG2xYljw7332yGqaVV4ICEVxUWZUpsRSrfmb/exec"
+    }
+
+    private fun showImageSuccess() {
+        progressBar.visibility = View.GONE
+        successIcon.visibility = View.VISIBLE
+        statusText.text = "Image Uploaded Successfully"
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            isProcessing = false
+           // isImageUploading = false
+            scanBtn.isEnabled = true
+            showIdle()
+        }, 2000)
+    }
+
+
 }

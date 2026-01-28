@@ -8,7 +8,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.operatorqrapp"
+        applicationId = "com.example.operatorqrapp_v2"
         minSdk = 21
         targetSdk = 34
         versionCode = 1
